@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from '@react-google-maps/api';
+import { LoadScript, DirectionsRenderer } from '@react-google-maps/api';
 import { SearchBox } from './map/SearchBox';
 import { LocationDetails } from './map/LocationDetails';
 import { ShareLocation } from './map/ShareLocation';
 import { useLocation } from '../hooks/useLocation';
 import { useMapState } from '../hooks/useMapState';
-import { useMapRefs } from '../hooks/useMapRefs';
+import { useMapService } from '../hooks/useMapService';
 
 const containerStyle = {
   width: '100%',
@@ -17,31 +17,66 @@ const defaultCenter = {
   lng: 0
 };
 
-const createUserMarkerIcon = (google: typeof window.google) => ({
-  path: google.maps.SymbolPath.CIRCLE,
-  scale: 8,
-  fillColor: '#4285F4',
-  fillOpacity: 1,
-  strokeColor: '#ffffff',
-  strokeWeight: 2
-});
-
-const libraries: ["places"] = ["places"];
+const libraries: ["places", "marker"] = ["places", "marker"];
 
 export const MapContainer = () => {
   const [loadError, setLoadError] = useState<Error | null>(null);
-  const [isMapLoaded, setIsMapLoaded] = useState(false);
-  const [markerIcon, setMarkerIcon] = useState<google.maps.Symbol | null>(null);
-  
+  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
   const { position, accuracy, error: locationError, isLoading, address, startWatching } = useLocation();
   const { destination, waypoints, directions, setDestination, addWaypoint, setDirections, clearRoute } = useMapState();
-  const { mapRef, directionsServiceRef, onLoad, onUnmount, panTo } = useMapRefs();
+  
+  const mapService = useMapService({
+    elementId: 'map',
+    initialCenter: position || defaultCenter,
+    initialZoom: 14,
+    isReady: isScriptLoaded
+  });
+
+  const handleScriptLoad = useCallback(() => {
+    setIsScriptLoaded(true);
+  }, []);
 
   useEffect(() => {
-    if (window.google && !markerIcon) {
-      setMarkerIcon(createUserMarkerIcon(window.google));
-    }
-  }, [markerIcon]);
+    const updateMarkers = async () => {
+      if (!mapService.isLoaded || !isScriptLoaded) return;
+
+      mapService.clearMarkers();
+
+      if (position && !directions) {
+        await mapService.createMarker({
+          position,
+          title: 'Your Location',
+          customPin: true
+        });
+      }
+
+      if (!directions) {
+        if (destination) {
+          await mapService.createDestinationMarker({
+            position: {
+              lat: destination.geometry.location.lat(),
+              lng: destination.geometry.location.lng()
+            },
+            title: destination.name || 'Destination'
+          });
+        }
+
+        for (let i = 0; i < waypoints.length; i++) {
+          const waypoint = waypoints[i];
+          await mapService.createWaypointMarker({
+            position: {
+              lat: waypoint.geometry.location.lat(),
+              lng: waypoint.geometry.location.lng()
+            },
+            title: waypoint.name || `Waypoint ${i + 1}`,
+            index: i
+          });
+        }
+      }
+    };
+
+    updateMarkers();
+  }, [position, destination, waypoints, directions, mapService, isScriptLoaded]);
 
   useEffect(() => {
     if (locationError) {
@@ -53,57 +88,6 @@ export const MapContainer = () => {
     console.error('Map Load Error:', error);
     setLoadError(error);
   }, []);
-
-  const handleLoad = useCallback((map: google.maps.Map) => {
-    try {
-      onLoad(map);
-      setIsMapLoaded(true);
-      if (window.google) {
-        setMarkerIcon(createUserMarkerIcon(window.google));
-      }
-    } catch (error) {
-      console.error('Map Load Error:', error);
-      setLoadError(error instanceof Error ? error : new Error('Failed to load map'));
-    }
-  }, [onLoad]);
-
-  const calculateRoute = useCallback(() => {
-    if (!position || !destination || !directionsServiceRef.current || !window.google) {
-      return;
-    }
-
-    try {
-      const waypointsList = waypoints.map(waypoint => ({
-        location: { 
-          lat: waypoint.geometry.location.lat(),
-          lng: waypoint.geometry.location.lng()
-        },
-        stopover: true
-      }));
-
-      directionsServiceRef.current.route(
-        {
-          origin: position,
-          destination: {
-            lat: destination.geometry.location.lat(),
-            lng: destination.geometry.location.lng()
-          },
-          waypoints: waypointsList,
-          optimizeWaypoints: true,
-          travelMode: window.google.maps.TravelMode.DRIVING
-        },
-        (result: any, status: any) => {
-          if (status === window.google.maps.DirectionsStatus.OK && result) {
-            setDirections(result);
-          } else {
-            console.error('Error fetching directions:', status);
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Route Calculation Error:', error);
-    }
-  }, [position, destination, waypoints, directionsServiceRef, setDirections]);
 
   const handlePlaceSelected = useCallback((
     place: any,
@@ -122,25 +106,24 @@ export const MapContainer = () => {
           addWaypoint(place);
         }
 
-        panTo(location);
-        setTimeout(calculateRoute, 100);
+        mapService.panTo(location);
       }
     } catch (error) {
       console.error('Place Selection Error:', error);
     }
-  }, [setDestination, addWaypoint, panTo, calculateRoute]);
+  }, [setDestination, addWaypoint, mapService]);
 
   const handleRecenterClick = useCallback(() => {
     try {
       if (position) {
-        panTo(position);
+        mapService.panTo(position);
       } else {
         startWatching();
       }
     } catch (error) {
       console.error('Recenter Error:', error);
     }
-  }, [position, panTo, startWatching]);
+  }, [position, mapService, startWatching]);
 
   if (loadError) {
     return (
@@ -192,75 +175,24 @@ export const MapContainer = () => {
       <LoadScript 
         googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}
         libraries={libraries}
+        onLoad={handleScriptLoad}
         onError={handleLoadError}
       >
         <SearchBox onPlaceSelected={handlePlaceSelected} />
         
-        <GoogleMap
-          mapContainerStyle={containerStyle}
-          center={position || defaultCenter}
-          zoom={14}
-          onLoad={handleLoad}
-          onUnmount={onUnmount}
-          options={{
-            zoomControl: true,
-            mapTypeControl: true,
-            scaleControl: true,
-            streetViewControl: true,
-            rotateControl: true,
-            fullscreenControl: true
-          }}
-        >
-          {isMapLoaded && markerIcon && (
-            <>
-              {position && !directions && (
-                <Marker
-                  position={position}
-                  icon={markerIcon}
-                  title="Your Location"
-                />
-              )}
-              
-              {!directions && (
-                <>
-                  {destination && (
-                    <Marker
-                      position={{
-                        lat: destination.geometry.location.lat(),
-                        lng: destination.geometry.location.lng()
-                      }}
-                      title={destination.name || 'Destination'}
-                    />
-                  )}
-                  
-                  {waypoints.map((waypoint, index) => (
-                    <Marker
-                      key={index}
-                      position={{
-                        lat: waypoint.geometry.location.lat(),
-                        lng: waypoint.geometry.location.lng()
-                      }}
-                      label={String(index + 1)}
-                      title={waypoint.name || `Waypoint ${index + 1}`}
-                    />
-                  ))}
-                </>
-              )}
+        <div id="map" style={containerStyle} />
 
-              {directions && (
-                <DirectionsRenderer
-                  directions={directions}
-                  options={{
-                    suppressMarkers: false,
-                    preserveViewport: true
-                  }}
-                />
-              )}
-            </>
-          )}
-        </GoogleMap>
+        {directions && (
+          <DirectionsRenderer
+            directions={directions}
+            options={{
+              suppressMarkers: false,
+              preserveViewport: true
+            }}
+          />
+        )}
 
-        {position && isMapLoaded && (
+        {position && mapService.isLoaded && isScriptLoaded && (
           <>
             <LocationDetails
               position={position}
