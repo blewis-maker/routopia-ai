@@ -6,7 +6,7 @@ interface LocationDetailsProps {
   accuracy?: number;
 }
 
-export const LocationDetails = ({ position, accuracy }: LocationDetailsProps) => {
+const LocationDetails: React.FC<LocationDetailsProps> = ({ position, accuracy }) => {
   const [address, setAddress] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
@@ -57,4 +57,6 @@ export const LocationDetails = ({ position, accuracy }: LocationDetailsProps) =>
       </div>
     </div>
   );
-}; 
+};
+
+export default LocationDetails; 

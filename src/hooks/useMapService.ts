@@ -18,6 +18,15 @@ export const useMapService = ({
   const mapServiceRef = useRef<MapService | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [error, setError] = useState<Error | null>(null);
+  const [routeDetails, setRouteDetails] = useState<{
+    distance: string;
+    duration: string;
+    route: google.maps.DirectionsResult | null;
+  }>({
+    distance: '',
+    duration: '',
+    route: null
+  });
 
   useEffect(() => {
     const initializeMap = async () => {
@@ -51,9 +60,51 @@ export const useMapService = ({
     return () => {
       if (mapServiceRef.current) {
         mapServiceRef.current.clearMarkers();
+        mapServiceRef.current.clearRoute();
       }
     };
   }, [elementId, initialCenter, initialZoom, isReady]);
+
+  const calculateRoute = async (
+    origin: google.maps.LatLngLiteral | google.maps.places.PlaceResult,
+    destination: google.maps.LatLngLiteral | google.maps.places.PlaceResult,
+    waypoints: google.maps.DirectionsWaypoint[] = []
+  ) => {
+    if (!mapServiceRef.current || !isLoaded) {
+      throw new Error('Map service not initialized');
+    }
+
+    try {
+      const result = await mapServiceRef.current.calculateRoute(origin, destination, waypoints);
+      
+      if (result.routes[0]) {
+        const route = result.routes[0];
+        const leg = route.legs[0];
+        
+        setRouteDetails({
+          distance: leg.distance?.text || '',
+          duration: leg.duration?.text || '',
+          route: result
+        });
+
+        return result;
+      }
+    } catch (err) {
+      console.error('Error calculating route:', err);
+      throw err;
+    }
+  };
+
+  const clearRoute = () => {
+    if (mapServiceRef.current) {
+      mapServiceRef.current.clearRoute();
+      setRouteDetails({
+        distance: '',
+        duration: '',
+        route: null
+      });
+    }
+  };
 
   const createMarker = async (props: {
     position: LatLngLiteral;
@@ -135,6 +186,9 @@ export const useMapService = ({
   return {
     isLoaded,
     error,
+    routeDetails,
+    calculateRoute,
+    clearRoute,
     createMarker,
     createWaypointMarker,
     createDestinationMarker,

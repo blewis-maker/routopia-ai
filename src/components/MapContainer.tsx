@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { LoadScript, DirectionsRenderer } from '@react-google-maps/api';
-import { SearchBox } from './map/SearchBox';
-import { LocationDetails } from './map/LocationDetails';
-import { ShareLocation } from './map/ShareLocation';
+import { LoadScript } from '@react-google-maps/api';
+import SearchBar from './map/SearchBar';
+import LocationDetails from './map/LocationDetails';
+import ShareLocation from './map/ShareLocation';
 import { useLocation } from '../hooks/useLocation';
 import { useMapState } from '../hooks/useMapState';
 import { useMapService } from '../hooks/useMapService';
@@ -17,13 +17,14 @@ const defaultCenter = {
   lng: 0
 };
 
-const libraries: ["places", "marker"] = ["places", "marker"];
+// Define libraries array outside component to prevent reloading
+const libraries = ["places", "marker"] as const;
 
-export const MapContainer = () => {
+const MapContainer = () => {
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [isScriptLoaded, setIsScriptLoaded] = useState(false);
   const { position, accuracy, error: locationError, isLoading, address, startWatching } = useLocation();
-  const { destination, waypoints, directions, setDestination, addWaypoint, setDirections, clearRoute } = useMapState();
+  const { destination, waypoints, setDestination, addWaypoint, clearRoute: clearMapState } = useMapState();
   
   const mapService = useMapService({
     elementId: 'map',
@@ -42,88 +43,113 @@ export const MapContainer = () => {
 
       mapService.clearMarkers();
 
-      if (position && !directions) {
+      if (position) {
         await mapService.createMarker({
           position,
           title: 'Your Location',
           customPin: true
         });
       }
-
-      if (!directions) {
-        if (destination) {
-          await mapService.createDestinationMarker({
-            position: {
-              lat: destination.geometry.location.lat(),
-              lng: destination.geometry.location.lng()
-            },
-            title: destination.name || 'Destination'
-          });
-        }
-
-        for (let i = 0; i < waypoints.length; i++) {
-          const waypoint = waypoints[i];
-          await mapService.createWaypointMarker({
-            position: {
-              lat: waypoint.geometry.location.lat(),
-              lng: waypoint.geometry.location.lng()
-            },
-            title: waypoint.name || `Waypoint ${i + 1}`,
-            index: i
-          });
-        }
-      }
     };
 
     updateMarkers();
-  }, [position, destination, waypoints, directions, mapService, isScriptLoaded]);
+  }, [position, mapService.isLoaded, isScriptLoaded]);
 
-  useEffect(() => {
-    if (locationError) {
-      console.error('Location Error:', locationError);
-    }
-  }, [locationError]);
-
-  const handleLoadError = useCallback((error: Error) => {
-    console.error('Map Load Error:', error);
-    setLoadError(error);
-  }, []);
-
-  const handlePlaceSelected = useCallback((
-    place: any,
-    type: 'destination' | 'waypoint'
+  const handleRouteSelected = useCallback(async (
+    origin: google.maps.places.PlaceResult,
+    destination: google.maps.places.PlaceResult,
+    waypoints: google.maps.places.PlaceResult[]
   ) => {
     try {
-      if (place?.geometry?.location) {
-        const location = {
-          lat: place.geometry.location.lat(),
-          lng: place.geometry.location.lng()
+      if (!mapService.isLoaded) {
+        console.error('Map service not loaded');
+        return;
+      }
+
+      console.debug('Route selection started:', {
+        origin,
+        destination,
+        waypoints,
+        hasMapService: !!mapService,
+        isMapServiceLoaded: mapService.isLoaded
+      });
+
+      // Handle origin location
+      let originLocation: google.maps.LatLngLiteral | string;
+      if (origin.geometry?.location) {
+        originLocation = {
+          lat: origin.geometry.location.lat(),
+          lng: origin.geometry.location.lng()
         };
-
-        if (type === 'destination') {
-          setDestination(place);
-        } else {
-          addWaypoint(place);
-        }
-
-        mapService.panTo(location);
-      }
-    } catch (error) {
-      console.error('Place Selection Error:', error);
-    }
-  }, [setDestination, addWaypoint, mapService]);
-
-  const handleRecenterClick = useCallback(() => {
-    try {
-      if (position) {
-        mapService.panTo(position);
+      } else if (origin.formatted_address) {
+        originLocation = origin.formatted_address;
       } else {
-        startWatching();
+        console.error('Invalid origin format:', origin);
+        throw new Error('Invalid origin location format');
       }
+
+      // Handle destination location
+      let destinationLocation: google.maps.LatLngLiteral | string;
+      if (destination.geometry?.location) {
+        destinationLocation = {
+          lat: destination.geometry.location.lat(),
+          lng: destination.geometry.location.lng()
+        };
+      } else if (destination.formatted_address) {
+        destinationLocation = destination.formatted_address;
+      } else {
+        console.error('Invalid destination format:', destination);
+        throw new Error('Invalid destination location format');
+      }
+
+      const waypointsList = waypoints.map(waypoint => {
+        if (!waypoint.geometry?.location && !waypoint.formatted_address) {
+          console.warn('Invalid waypoint format:', waypoint);
+          throw new Error('Invalid waypoint format');
+        }
+        return {
+          location: waypoint.formatted_address || {
+            lat: waypoint.geometry!.location!.lat(),
+            lng: waypoint.geometry!.location!.lng()
+          },
+          stopover: true
+        };
+      });
+
+      console.debug('Calculating route with:', {
+        originLocation,
+        destinationLocation,
+        waypointsList
+      });
+
+      const result = await mapService.calculateRoute(
+        originLocation,
+        destinationLocation,
+        waypointsList
+      );
+
+      console.debug('Route calculation successful:', {
+        resultStatus: result.status,
+        routes: result.routes.length,
+        waypoints: result.routes[0]?.waypoint_order
+      });
+      
+      setDestination(destination);
+      waypoints.forEach(waypoint => addWaypoint(waypoint));
     } catch (error) {
-      console.error('Recenter Error:', error);
+      console.error('Route calculation error:', error);
+      // You might want to show this error to the user
+      if (error instanceof Error) {
+        // Handle the error appropriately in your UI
+        console.error('Route Error:', error.message);
+      }
     }
-  }, [position, mapService, startWatching]);
+  }, [mapService, setDestination, addWaypoint]);
+
+  const handleClearRoute = useCallback(() => {
+    mapService.clearRoute();
+    clearMapState();
+  }, [mapService, clearMapState]);
 
   if (loadError) {
     return (
@@ -154,43 +180,20 @@ export const MapContainer = () => {
     );
   }
 
-  if (locationError) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center p-6 max-w-sm">
-          <div className="text-red-500 text-lg mb-4">{locationError}</div>
-          <button
-            onClick={startWatching}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="relative w-full h-screen">
       <LoadScript 
         googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}
         libraries={libraries}
         onLoad={handleScriptLoad}
-        onError={handleLoadError}
+        onError={setLoadError}
       >
-        <SearchBox onPlaceSelected={handlePlaceSelected} />
+        <SearchBar 
+          onRouteSelected={handleRouteSelected}
+          initialOrigin={position ? `${position.lat}, ${position.lng}` : ''}
+        />
         
         <div id="map" style={containerStyle} />
-
-        {directions && (
-          <DirectionsRenderer
-            directions={directions}
-            options={{
-              suppressMarkers: false,
-              preserveViewport: true
-            }}
-          />
-        )}
 
         {position && mapService.isLoaded && isScriptLoaded && (
           <>
@@ -198,10 +201,22 @@ export const MapContainer = () => {
               position={position}
               accuracy={accuracy || undefined}
             />
+            
+            {mapService.routeDetails.route && (
+              <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-10">
+                <div className="bg-white rounded-lg shadow-lg p-4 flex items-center space-x-4">
+                  <div className="text-sm">
+                    <div className="font-semibold text-gray-700">Distance: {mapService.routeDetails.distance}</div>
+                    <div className="text-gray-600">Duration: {mapService.routeDetails.duration}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="absolute bottom-6 right-6 flex flex-col space-y-2">
-              {(directions || waypoints.length > 0) && (
+              {mapService.routeDetails.route && (
                 <button
-                  onClick={clearRoute}
+                  onClick={handleClearRoute}
                   className="bg-white px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-shadow duration-200 flex items-center space-x-2"
                 >
                   <svg
@@ -225,7 +240,7 @@ export const MapContainer = () => {
               />
               
               <button
-                onClick={handleRecenterClick}
+                onClick={() => mapService.panTo(position)}
                 className="bg-white px-4 py-2 rounded-full shadow-lg hover:shadow-xl transition-shadow duration-200 flex items-center space-x-2"
               >
                 <svg

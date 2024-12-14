@@ -6,7 +6,7 @@ interface ShareLocationProps {
   address: string;
 }
 
-export const ShareLocation = ({ position, address }: ShareLocationProps) => {
+const ShareLocation: React.FC<ShareLocationProps> = ({ position, address }) => {
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -102,4 +102,6 @@ export const ShareLocation = ({ position, address }: ShareLocationProps) => {
       )}
     </div>
   );
-}; 
+};
+
+export default ShareLocation; 
