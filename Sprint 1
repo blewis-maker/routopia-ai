@@ -1,0 +1,87 @@
+Sprint 1: Google Maps Integration
+Step 1: Project Initialization
+Goal: Set up a new Next.js project and ensure a stable folder structure.
+
+Recommended Modules & Tools:
+
+Next.js v13 (latest stable version with app router support).
+TypeScript (for type safety and scalability).
+ESLint + Prettier (for clean code formatting).
+Tailwind CSS (optional, for quick UI development).
+Steps:
+
+Create a new Next.js project.
+Add TypeScript and basic dependencies.
+Set up a folder structure:
+src/components/ – Reusable React components.
+src/pages/ – Routing and entry points.
+src/styles/ – CSS or Tailwind files.
+src/utils/ – Helper functions.
+src/api/ – API integrations.
+Cursor Prompts:
+
+Create a new Next.js project using the latest stable version. Include TypeScript support.
+Add ESLint and Prettier to the project. Configure them for Next.js and TypeScript.
+Set up a folder structure: components, pages, styles, utils, and api directories.
+Step 2: Install Dependencies
+Goal: Install the required modules for Google Maps integration.
+
+Dependencies:
+
+google-maps-react or @react-google-maps/api (for Google Maps integration).
+dotenv (to manage API keys securely).
+axios (for making API calls).
+Cursor Prompts:
+
+Install the following dependencies: @react-google-maps/api, dotenv, axios.
+Create a .env.local file to store the Google Maps API key securely. Add it to the .gitignore file.
+Step 3: Render a Google Map
+Goal: Display a basic interactive map using your Google Maps API key.
+
+Steps:
+
+Import GoogleMap and LoadScript from @react-google-maps/api.
+Use the LoadScript component to load the Google Maps API.
+Render a GoogleMap component with basic properties (e.g., center, zoom).
+Cursor Prompts:
+
+Write a React component called MapContainer that uses @react-google-maps/api to render a Google Map.
+Configure the MapContainer component to use the API key stored in the environment variable.
+Render the MapContainer component on the index page (/pages/index.js or /pages/index.tsx).
+Step 4: Add User Location Detection
+Goal: Enable the map to center on the user’s current location.
+
+Steps:
+
+Use the browser’s navigator.geolocation API to fetch the user’s location.
+Update the map’s center dynamically based on the location.
+Cursor Prompts:
+
+Modify the MapContainer component to fetch the user’s current location using the navigator.geolocation API.
+Center the map dynamically on the user's current location once retrieved.
+Step 5: Test and Debug
+Goal: Ensure the map is functioning as expected.
+
+Steps:
+
+Check that the map loads with your API key.
+Test user location detection.
+Verify no errors appear in the console.
+Cursor Prompts:
+
+Test the application locally. Verify that the map renders correctly with the Google Maps API and centers on the user's current location.
+Debug any errors related to the API key, map rendering, or geolocation functionality.
+Stable Application Structure
+/src
+  /components
+    MapContainer.tsx          // Google Maps rendering logic
+  /pages
+    index.tsx                 // Entry point rendering the map
+  /styles
+    globals.css               // Global styles
+  /utils
+    helpers.ts                // General utility functions
+  /api
+    googleApi.ts              // Google Maps API-specific utilities
+  .env.local                  // API key (not checked into Git)
+  next.config.js              // Next.js configuration
